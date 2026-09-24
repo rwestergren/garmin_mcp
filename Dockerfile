@@ -1,44 +1,28 @@
-# Use Python 3.12 slim image for smaller size
 FROM python:3.12-slim
 
-# Note: .dockerignore is symlinked to .gitignore for unified exclusion rules
+COPY --from=ghcr.io/astral-sh/uv:0.11.6 /uv /usr/local/bin/uv
 
-# Set working directory
 WORKDIR /app
-
-# Install uv for faster dependency management
-# https://github.com/astral-sh/uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    UV_SYSTEM_PYTHON=1
+    UV_LINK_MODE=copy \
+    PATH=/app/.venv/bin:$PATH \
+    PORT=8080 \
+    GARMIN_MCP_TRANSPORT=streamable-http \
+    GARMIN_MCP_HOST=0.0.0.0 \
+    GARMINTOKENS=/data/garmin \
+    GARMINTOKENS_BASE64=/data/garmin_tokens_base64 \
+    GARMIN_DISABLED_TOOLS=download_activity_file,set_fit_download_dir,download_course_gpx,upload_course
 
-# Copy dependency files and README first for better layer caching
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable --compile-bytecode \
+    && mkdir -p /data/garmin \
+    && chmod 700 /data /data/garmin
 
-# Copy the application source code (needed for editable install)
-COPY src/ ./src/
-
-# Install dependencies using uv
-RUN uv pip install -e .
-
-# Copy test files (optional, for testing in container)
-COPY tests/ ./tests/
-COPY pytest.ini ./
-
-# Create directory for Garmin tokens
-RUN mkdir -p /root/.garminconnect && \
-    chmod 700 /root/.garminconnect
-
-# Expose the HTTP port. The image defaults to stdio (Claude Desktop, Inspector);
-# set GARMIN_MCP_TRANSPORT=streamable-http to serve over this port (e.g. in k8s).
-# EXPOSE 8000
-
-# Set the entrypoint to run the MCP server
-ENTRYPOINT ["garmin-mcp"]
-
-# Health check (optional - adjust based on your needs)
-# HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-#   CMD python -c "import sys; sys.exit(0)"
+COPY scripts/container-entrypoint.sh /usr/local/bin/container-entrypoint
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/container-entrypoint"]
+CMD ["garmin-mcp"]

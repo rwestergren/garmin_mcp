@@ -2,6 +2,9 @@
 
 # Garmin MCP Server
 
+This fork packages the server for a per-installation persistent-storage gateway.
+See [CONTAINER.md](CONTAINER.md) for the image contract, setup, and checks.
+
 This Model Context Protocol (MCP) server connects to Garmin Connect and exposes your fitness and health data to Claude and other MCP-compatible clients.
 
 Garmin's API is accessed via the awesome [python-garminconnect](https://github.com/cyberjunky/python-garminconnect) library.

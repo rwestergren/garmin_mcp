@@ -7,8 +7,9 @@ services:
 
     # Option 1: Use environment variables directly
     environment:
-      - GARMIN_EMAIL=${GARMIN_EMAIL}
-      - GARMIN_PASSWORD=${GARMIN_PASSWORD}
+      - GARMIN_EMAIL=${GARMIN_EMAIL:-}
+      - GARMIN_PASSWORD=${GARMIN_PASSWORD:-}
+      - PORT=${PORT:-8080}
       # - GARMIN_IS_CN=true  # Uncomment to use Garmin Connect China (garmin.cn)
 
     # Option 2: Use file-based secrets (uncomment to use)
@@ -21,14 +22,19 @@ services:
 
     # Mount volume to persist Garmin OAuth tokens
     volumes:
-      - garmin-tokens:/root/.garminconnect
+      - garmin-tokens:/data
+
+    ports:
+      - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
     # Restart policy
     restart: unless-stopped
 
-    # Optional: Set stdin_open and tty for interactive MFA input
-    stdin_open: true
-    tty: true
+    # Authenticate first: docker compose run --rm garmin-mcp garmin-mcp-auth
 
 volumes:
   garmin-tokens:

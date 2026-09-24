@@ -187,12 +187,15 @@ class _GarminProxy:
         ),
     }
 
-    def __init__(self, client, timeout=None):
+    def __init__(self, client, timeout=None, *, lock=None):
         self._client = client
         self._timeout = _resolve_call_timeout() if timeout is None else timeout
+        self._lock = lock if lock is not None else threading.Lock()
 
     def __getattr__(self, name):
         attr = getattr(self._client, name)
+        if name == "client":
+            return _GarminProxy(attr, timeout=self._timeout, lock=self._lock)
         if not callable(attr):
             return attr
 
@@ -206,8 +209,18 @@ class _GarminProxy:
                         full_msg = f"{prefix}: {details}. {hint}"
                         raise type(exc)(full_msg) from None
                 raise
+            finally:
+                self._lock.release()
 
         def _call(*args, **kwargs):
+            # Keep token refresh and persistence exclusive, even after a caller
+            # times out while its daemon worker is still using the client.
+            acquired = (
+                self._lock.acquire(timeout=self._timeout)
+                if self._timeout else self._lock.acquire()
+            )
+            if not acquired:
+                raise TimeoutError("Another Garmin request is still running; try again later.")
             if not self._timeout:
                 return _invoke(*args, **kwargs)
 
@@ -225,7 +238,11 @@ class _GarminProxy:
             worker = threading.Thread(
                 target=_worker, name=f"garmin-call:{name}", daemon=True
             )
-            worker.start()
+            try:
+                worker.start()
+            except BaseException:
+                self._lock.release()
+                raise
             worker.join(self._timeout)
             if worker.is_alive():
                 raise TimeoutError(
